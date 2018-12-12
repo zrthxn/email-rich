@@ -1,20 +1,14 @@
+<!DOCTYPE html>
 <html>
-
-<body>
-    <h1>HELLO GOOD SIR</h1>
-    <p>
-        This is a sample of a message.
-    </p>
-    <br><br>
-
-    A :: #A#
-    <br>
-    B :: #B#
-    
-    <hr>
-
-    Example of a copyright sign encoded with Quoted-Printable: =A9
-
-</body>
-
+    <title>SUBJECT CSS $N$</title>
+    <body>
+        <h1 style="color:#fec018">HELLO GOOD SIR</h1>
+        <p>This is a sample email sent to you from NODE (Gmail API) and it's fuckin secured BY GMAIL!</p>
+        <br><br>
+        A - $A$ <br>
+        B - $B$ <br>
+        HTML ==== $HTML$
+        <hr>
+        <p>This is also customized and can contain custom data for different recipients</p>
+    </body>
 </html>

@@ -1,10 +1,4 @@
-A,B,EMAIL
-1,1,alisamar181099@gmail.com
-2,2,alisamar181099@gmail.com
-3,3,alisamar181099@gmail.com
-4,4,alisamar181099@gmail.com
-5,5,alisamar181099@gmail.com
-6,6,alisamar181099@gmail.com
-7,7,alisamar181099@gmail.com
-8,8,alisamar181099@gmail.com
-9,9,alisamar181099@gmail.com
+N,A,B,EMAIL,HTML
+1,AAA1,BBB1,zrthxn@gmail.com,<button style="padding:1em;border-radius:10px;background-color:#ffd800;border:none;">Custom Html</button>
+2,AAA2,BBB2,zrthxn@gmail.com,<button style="padding:1em;border-radius:10px;background-color:#ffd800;border:none;">Custom Html</button>
+3,AAA3,BBB3,zrthxn@gmail.com,<button style="padding:1em;border-radius:10px;background-color:#ffd800;border:none;">Custom Html</button>
