@@ -1,11 +1,15 @@
 const fs = require('fs');
 const readline = require('readline');
 const {google} = require('googleapis');
-const sendFrequency = 250;
+const os = require('os');
+const cluster = require('cluster');
+const LoadBalancer = require('./LoadBalancer');
 
 const SCOPES = ['https://mail.google.com'];
 const CREDENTIALS_PATH = 'credentials.json';
 const TOKEN_PATH = 'token.json';
+
+var sendFrequency = 1000;
 
 function authorize() {
     return new Promise((resolve,reject)=>{
@@ -57,8 +61,10 @@ function getNewToken(oAuth2Client) {
     });    
 }
 
-exports.SingleEmailDelivery = function (mail) {
-    if(typeof mail==='object') throw "Invalid Types";
+// ========================= DELIVERY MODES ========================= //
+
+exports.SingleDelivery = function (mail) {
+    if(typeof mail==='json') throw "Invalid Types";
     let headers =
         'Mime-Version: 1.0\r\n' +
         'Content-Type: multipart/alternative; boundary="==X__MULTIPART__X=="\r\n' +
@@ -82,65 +88,25 @@ exports.SingleEmailDelivery = function (mail) {
             .replace(/\//g, '_')
             .replace(/=+$/, '');
 
-        authorize.then((auth)=>{
-            const gmail = google.gmail({version: 'v1', auth});
+        authorize().then((auth)=>{
             console.log('Sending email to ' + mail.to);
-            gmail.users.messages.send({
-                'userId': mail.userId,
-                'resource': {
-                    'raw': mail64
-                }
-            }, (err, res)=>{
-                if(err) reject(JSON.stringify(err.errors[0]));
-                console.log(res.status, res.statusText);
-                resolve(res.status);
-            });
+            send(google.gmail({version: 'v1', auth}), mail64, mail.userId)
+                .then((res)=>{
+                    if(res===200) resolve(res);
+                    else reject();
+                })
+                .catch((err)=>{
+                    console.error(err);
+                });
         });
     });
 }
 
-exports.SingleEmailSyncDelivery = function (auth, mail) {
-    if(typeof mail==='object') throw "Invalid Types";
-    const gmail = google.gmail({version: 'v1', auth});
-    let headers =
-        'Mime-Version: 1.0\r\n' +
-        'Content-Type: multipart/alternative; boundary="==X__MULTIPART__X=="\r\n' +
-        'Content-Transfer-Encoding: binary\r\n'+
-        'X-Mailer: MIME::Lite 3.030 (F2.84; T1.38; A2.12; B3.13; Q3.13)\r\n\r\n'+
-
-        '--==X__MULTIPART__X==\r\n' +
-        'Content-Transfer-Encoding: binary\r\n' +
-        'Content-Type: text/html; charset="utf-8"\r\n' +
-        'Content-Disposition: inline\r\n'+
-        'Content-Length: '+ mail.length +'\r\n\r\n';
-    
-    let from = 'From: '+ mail.username + ' <' + mail.from + '>\r\n';
-    let to = 'To: '+ mail.to +'\r\n';
-    let subject = 'Subject: ' + mail.subject + '\r\n';
-
-    var mail64 = Buffer.from(from + to + subject + headers + mail.body + "\r\n--==X__MULTIPART__X==--\r\n")
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
-
-    console.log('Sending email to', mail.to);
-    gmail.users.messages.send({
-        'userId': mail.userId,
-        'resource': {
-            'raw': mail64
-        }
-    }, (err, res)=>{
-        if(err) return console.error(JSON.stringify(err.errors[0]));
-        return console.log(res.status, res.statusText);
-    });
-}
-
-exports.DatasetEmailDelivery = function (mail, content, database) {
-    // if(typeof content!=='string' || typeof database!=='string' || typeof mail==='object') 
+exports.DatasetDelivery = function (mail, content, database) {
+    // if(typeof content!=='string' || typeof database!=='string' || typeof mail==='json') 
     //     throw("Invalid Types :: " + typeof content + ' ' + typeof database + ' ' + typeof mail);
     let data = [], addressList = [];
-    let raw = database.toString().trim().split('\r\n');
+    let raw = database.split('\r\n');
     let heads = raw[0].split(',');
 
     return new Promise((resolve, reject)=>{
@@ -198,7 +164,14 @@ exports.DatasetEmailDelivery = function (mail, content, database) {
 
             let to = 'To: ' + addressList[i]+ '\r\n';
             let from = 'From: '+ mail.username + ' <' + mail.from + '>\r\n';
-            let subject = 'Subject: ' + current_email.split('<title>')[1].split('</title>')[0] + '\r\n';
+            
+            let dyn_sub = "";
+            try {
+                dyn_sub = current_email.split('<title>')[1].split('</title>')[0];
+            } catch(e) {
+                dyn_sub = mail.subject;
+            }
+            let subject = 'Subject: ' + dyn_sub + '\r\n';
             emails.push(
                 Buffer.from(from + to + subject + headers + current_email + "\r\n--==X__MULTIPART__X==--\r\n").toString('base64')
                     .replace(/\+/g, '-')
@@ -209,57 +182,76 @@ exports.DatasetEmailDelivery = function (mail, content, database) {
 
         // SENDING BASE 64 EMAILS
         authorize().then((auth)=>{
-            var INDEX=0;
+            var INDEX=0, time;
             console.log('Processing' , addressList.length, 'emails');
             function deploy() {
+                time = +new Date();
                 setTimeout(function() {
                     if(addressList[INDEX]!==undefined) {
-                        const gmail = google.gmail({version: 'v1', auth});
                         console.log('Sending email to ' + addressList[INDEX]);
-                        gmail.users.messages.send({
-                            'userId': mail.userId,
-                            'resource': {
-                                'raw': emails[INDEX]
-                            }
-                        }, (err, res)=>{
-                            if(err) return console.error(INDEX, JSON.stringify(err.errors[0]))
-                            if(res.status===200) {
-                                INDEX++;
-                                if(INDEX<emails.length) 
-                                    deploy();
-                                else 
-                                    resolve();
-                            }
-                        });
+                        send(google.gmail({version: 'v1', auth}), emails[INDEX], mail.userId)
+                            .then((res)=>{
+                                if(res===200) {
+                                    INDEX++;
+                                    if(INDEX<emails.length) deploy();
+                                    else resolve();
+                                }
+                            })
+                            .catch((err)=>{
+                                console.error(err);
+                            });
                     } else {
                         console.log('Invalid Data Row ::', INDEX);
                     }
-                }, sendFrequency);
+                }, sendFrequency-((+new Date())-time));
             }
             deploy();
         });
     });
 }
 
-// exports.BulkEmailDelivery = function (auth, mail, content, database) {
-//     // Multithreaded EMail delivery for more than 250 emails
-// }
+exports.DistributedCampaign = function(mail, content, database, options) {
+    var MAX_DATA = 50;
+    var payload = [];
 
-exports.send = function (email, userId) {
+    let data_rows = database.split('\r\n');
+    let head = data_rows[0];
+
+    let count = Math.floor((data_rows.length-1)/MAX_DATA) + 1;
+    for(let i=0; i<count; i++){
+        let data = "";
+        for(let j=MAX_DATA*i+1; j<=(i+1)*MAX_DATA; j++) {
+            if(data_rows[j]===undefined) break;
+            data += ('\r\n' + data_rows[j]); 
+        }
+        payload.push({
+            mail: mail,
+            content: content,
+            data: head + data
+        });
+    }
+
+    LoadBalancer.deployNewInstance('./EmailDistributionWorker.js', count, payload, 'free');
+}
+
+// ========================= UTILITY FUNCTION ========================= //
+
+function send(gmail, email, userId) {
     // Takes in already encoded base 64 email
-    if(typeof email==='object') throw "Invalid Types";
     return new Promise((resolve,reject)=>{
-        authorize().then((auth)=>{
-            const gmail = google.gmail({version: 'v1', auth});
-            gmail.users.messages.send({
-                'userId': userId,
-                'resource': {
-                    'raw': email
-                }
-            }, (err, res)=>{
-                if(err) return reject(JSON.stringify(err.errors[0]));
-                if(res.status===200) resolve(res.status, res.statusText);
-            });
+        gmail.users.messages.send({
+            'userId': userId,
+            'resource': {
+                'raw': email
+            }
+        }, (err, res)=>{
+            if(err) reject(err.errors[0]);
+            if(res.status===200) resolve(res.status);
         });
     });
+}
+
+exports.setFrequency = function(freq) {
+    sendFrequency = freq;
+    console.log('Reset sending frequency', freq);
 }

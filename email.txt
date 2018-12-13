@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html>
-    <title>SUBJECT CSS $N$</title>
+    <title>NEW DISTRIBUTED $N$</title>
     <body>
         <h1 style="color:#fec018">HELLO GOOD SIR</h1>
         <p>This is a sample email sent to you from NODE (Gmail API) and it's fuckin secured BY GMAIL!</p>
